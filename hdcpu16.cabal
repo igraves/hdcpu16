@@ -1,0 +1,13 @@
+Name: hdcpu16
+Version: 0.0
+Synopsis: A toolchain for targeting DCPU-16.
+Description: A toolchain for targeting DCPU-16 for the upcoming game "0x10c" by Notch.
+License: GPL
+License-file: LICENSE
+Author: Ian Graves
+Maintainer: Ian Graves <thegravian@gmail.com>
+Build-type: Simple
+Build-depends: base, binary >= 0.5.1, parsec >= 3.1.2, bytestring >= 0.9.2.1, containers >= 0.4.2.1
+Executable:     hdcpu
+Main-is: Main.hs
+
