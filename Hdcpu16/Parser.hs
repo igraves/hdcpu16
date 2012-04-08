@@ -1,6 +1,6 @@
-module Parser where
+module Hdcpu16.Parser (parseins) where
 
-import Types
+import Hdcpu16.Types
 import Text.Parsec
 import Text.Parsec.String
 import Data.Either
@@ -12,8 +12,8 @@ import Data.Maybe
 
 
 --The Big daddy
-parsins :: String -> IO [Instruction]
-parsins fn = do
+parseins :: String -> IO [Instruction]
+parseins fn = do
                 str <- readFile fn
                 let ins = runParser program () fn str
                 case ins of
@@ -38,9 +38,7 @@ fixids (NBI oc (Ident s1)) m = NBI oc (fixop s1 m)
 fixids n _ = n
 
 fixop i m = let r = fromJust $ Data.Map.lookup i m
-                in if r > 0xFF 
-                     then NWLit r
-                     else LV (fromIntegral r)
+                in NWLit r
                   
 
 islbl ((L _)) = True

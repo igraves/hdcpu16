@@ -1,11 +1,16 @@
-module Types where
+{-# LANGUAGE FlexibleInstances #-}
+
+module Hdcpu16.Types where
 
 import Data.Binary
 import Data.Binary.Get
+import Data.Binary.Put
 import Data.Word
 import Data.Bits
+import Debug.Trace
+import Numeric
 
-data Register = A | B | C | X | Y | Z | I | J deriving Show
+data Register = A | B | C | X | Y | Z | I | J deriving (Eq, Show)
 
 
 data Operand =   Reg Register 
@@ -20,7 +25,7 @@ data Operand =   Reg Register
                | NWRef Word16
                | NWLit Word16
                | Ident String -- This can't be assembled and must be resolved
-               | LV Word8  deriving Show
+               | LV Word8  deriving (Show, Eq)
 
 data Opcode =   NonBasic
               | SET
@@ -37,30 +42,52 @@ data Opcode =   NonBasic
               | IFE
               | IFN
               | IFG
-              | IFB deriving Show
+              | IFB deriving (Show, Eq)
 
-data NBOpcode = JSR deriving Show
+data NBOpcode = JSR deriving (Show, Eq)
+
+data Program = Prog [Instruction] deriving Show
 
 data Instruction =   BI Opcode Operand Operand 
                    | NBI NBOpcode Operand 
-                   | L Label deriving Show
+                   | L Label deriving (Eq, Show)
 
-data Label = Label String deriving Show
+data Label = Label String deriving (Eq, Show)
 
 
 instance Binary Instruction where
           get = parseIns
-          put x = put $ ins2word16 x
+          put x = ins2word16 x 
+
+instance Binary Program where
+          get = do
+                  ins <- parseManyIns
+                  return $ Prog ins
+          put (Prog xs) = do
+                            mapM ins2word16 xs
+                            return ()
 --
 --End Types
 --
 --
 
+parseManyIns :: Get [Instruction]
+parseManyIns = do
+                  n <- remaining
+                  if n > 0
+                    then do
+                            i <- parseIns
+                            rem <- parseManyIns
+                            return (i:rem)
+                    else do
+                            return []
+
 parseIns :: Get Instruction
 parseIns = do
-              fst <- getWord16le
-              let opc = 0xF .&. fst
-              if opc == 0x0
+              fst <- getWord16be
+              let opc = fst
+              let opc' = 0x0F .&. fst
+              if opc' == 0x0
                 then do
                        --parse non-basic instruction
                        let opc' = word2noc $ (rotateR opc 4) .&. 0x3F
@@ -71,18 +98,18 @@ parseIns = do
                        let opc' = word2oc $ opc .&. 0xF
                        op1 <- procword $ word2op $ (rotateR opc 4) .&. 0x3F
                        op2 <- procword $ word2op $ (rotateR opc 10) .&. 0x3F
-                       return $ BI opc' op1 op2 
+                       return $ BI opc' op1 op2
                        --parse basic instruction
   where
     --finish these partially completed ops
     procword (RNW r 0) = do 
-                            res <- getWord16le
+                            res <- getWord16be
                             return $ RNW r res
     procword (NWRef 0) = do
-                            res <- getWord16le
+                            res <- getWord16be
                             return $ NWRef res
     procword (NWLit 0) = do
-                            res <- getWord16le
+                            res <- getWord16be
                             return $ NWLit res
     procword x = return x
 
@@ -90,13 +117,18 @@ parseIns = do
 --
 --Encoding 
 --
-ins2word16 :: Instruction -> [Word16]
-ins2word16 (BI oc op1 op2) = [(rotateL (op2word16 op2) 10) .|. (rotateL (op2word16 op1) 4) .|. (oc2word16 oc)] ++ b2 ++ b3
+ins2word16 :: Instruction -> Put 
+ins2word16 (BI oc op1 op2) = do
+                                putWord16be $ (rotateL (op2word16 op2) 10) .|. (rotateL (op2word16 op1) 4) .|. (oc2word16 oc)
+                                if Prelude.length b2 > 0 then putWord16be (head b2) else return ()
+                                if Prelude.length b3 > 0 then putWord16be (head b3) else return ()
             where
               b2 = prjword op1
               b3 = prjword op2
 
-ins2word16 (NBI noc op1) = [(rotateL (op2word16 op1) 10) .|. (rotateL (noc2word16 noc) 4)] ++ b2
+ins2word16 (NBI noc op1) = do
+                             putWord16be $ (rotateL (op2word16 op1) 10) .|. (rotateL (noc2word16 noc) 4)
+                             if length b2 > 0 then putWord16be (head b2) else return ()
             where
               b2 = prjword op1
               
@@ -186,7 +218,7 @@ op2word16 op = case op of
                   OVF -> 0x1d
                   (NWRef _) -> 0x1e
                   (NWLit _) -> 0x1f
-                  LV n -> (fromIntegral n) + 0x20 --Requires prior checking
+                  LV n -> (fromIntegral n) --Requires prior checking
 
 word2op :: Word16 -> Operand
 word2op op = case op of
@@ -222,6 +254,8 @@ word2op op = case op of
                   0x1D -> OVF
                   0x1E -> NWRef 0 --Second pass fills this in
                   0x1F -> NWLit 0 --Second pass fills this in
-                  n -> if n < 0x31 && n > 0x20 then (LV ((fromIntegral n)-0x20)) else error "Bad opcode."
+                  n -> if n <= 0x3F && n >= 0x20 
+                          then (LV ((fromIntegral n))) 
+                          else error "Bad opcode."
                   
 ---End Encoding
